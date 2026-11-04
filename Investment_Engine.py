@@ -65,14 +65,13 @@ def fetch_stock_cagr(ticker: str, lookback_years: int = 5):
         cagr = (end_price / start_price) ** (1.0 / lookback_years) - 1.0
         if np.isnan(cagr):
             return 0.08, "Default to 8.0%"
+        return float(cagr), f"Historical CAGR: {cagr:.2%}"
     except Exception:
         return 0.08, "Fetch error (Default 8.0%)"
 
 # 3. Session State (Stores custom ad-hoc cash injections)
 if "injections" not in st.session_state:
-    st.session_state.injections = [
-        {"Ticker" : "NVDA", "Month": 4, "Amount": 2000.0, "Note": "Tuition Freelance"}
-    ]
+    st.session_state.injections = []
 
 # 4. Sidebar: Multi Stock Asset Builder
 popular_tickers = ["VWRA.L", "SPY", "NVDA", "AAPL", "GOOGL", "MSFT", "TSLA", "AMZN"]
@@ -108,10 +107,10 @@ for ticker in selected_tickers:
 
         with c1:
             init_val = st.number_input(f"Initial $ ({ticker})",
-            min_value = 0.0, value=2000.0, step=100.0, key=f"init_{ticker}")
+            min_value = 0.0, value=0.0, step=0.0, key=f"init_{ticker}")
 
             with c2:
-                month_val = st.number_input(f"Monthly $ ({ticker})", min_value=0.0, value=100.0, step=25.0,
+                month_val = st.number_input(f"Monthly $ ({ticker})", min_value=0.0, value=0.0, step=25.0,
                                             key=f"month_{ticker}")
 
             asset_config[ticker] = {
@@ -154,13 +153,22 @@ with st.expander("⚡ Simulate an Ad-Hoc Cash Injection (The 'What-If' Tool)", e
     else:
         target_rate = asset_config[inj_ticker]["monthly_r"]
     with col_b:
-        inj_month = st.number_input("In Which Month?", min_value=1, max_value=total_months, value=4)
+        inj_month = st.number_input("In Which Month?", min_value=1, max_value=total_months, value=1)
     with col_c:
-        inj_amount = st.number_input("Injection Amount ($)", min_value=100.0, value=2000.0, step=100.0)
+        inj_amount = st.number_input("Injection Amount ($)", min_value=100.0, value=0.0, step=100.0)
     with col_d:
-        inj_note = st.text_input("Reason / Note", value="Internship Pay")
+        inj_note = st.text_input("Reason / Note", value="")
 
     # Math: What is the isolated impact of this single injection?
+    if inj_ticker not in asset_config:
+        custom_cagr, _ = fetch_stock_cagr(inj_ticker, lookback)
+        asset_config[inj_ticker] = {
+            "cagr": custom_cagr,
+            "monthly_r": custom_cagr / 12.0,
+            "initial": 0.0,
+            "monthly": 0.0
+        }
+
     target_rate = asset_config[inj_ticker]["monthly_r"]
     remaining_months = total_months - inj_month
     compounded_impact = inj_amount * ((1 + target_rate) ** remaining_months)
@@ -207,7 +215,9 @@ for item in st.session_state.injections:
     injection_map[key] = injection_map.get(key, 0.0) + item["Amount"]
 
 # Tracking balances per ticker over time
-asset_histories = {ticker: [asset_config[ticker]["initial"]] for ticker in selected_tickers}
+all_active_tickers = list(asset_config.keys())
+asset_histories = {ticker: [asset_config[ticker]["initial"]] for ticker in all_active_tickers}
+current_balances = {ticker: asset_config[ticker]["initial"] for ticker in all_active_tickers}
 cost_basis_history = [total_initial_cash]
 running_cost = total_initial_cash
 
@@ -217,7 +227,7 @@ current_balances = {ticker: asset_config[ticker]["initial"] for ticker in select
 for m in range(1, total_months + 1):
     month_total_deposit = 0.0
 
-    for ticker in selected_tickers:
+    for ticker in all_active_tickers:
         cfg = asset_config[ticker]
         r = cfg["monthly_r"]
 
