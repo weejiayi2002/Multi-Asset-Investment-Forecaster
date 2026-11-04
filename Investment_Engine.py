@@ -103,15 +103,7 @@ enable_mean_reversion = st.sidebar.checkbox(
     value=True,
     help="Caps extreme historic rates (like NVDA 47%) to a sustainable long-term ceiling."
 )
-# ✅ Interactive Mean Reversion Ceiling Slider
-MAX_REALISTIC_CAGR = st.sidebar.slider(
-    "Max Realistic Growth Ceiling (%)",
-    min_value=12.0,
-    max_value=30.0,
-    value=20.0,
-    step=1.0,
-    help="Caps hyper-growth stocks to this ceiling so 5 to 10 years projections remain realistic."
-) / 100.0
+
 
 st.sidebar.markdown("---")
 st.sidebar.header("💵 Starting and Monthly Allocation")
@@ -168,34 +160,58 @@ for ticker in selected_tickers:
             # --- ⚡ TWO-STAGE GROWTH ENGINE ---
             is_hyper_growth = raw_rate > 0.25  # Automatically checks if stock is crazy hot like NVDA
 
+            # --- ⚡ CLEAN, READABLE TWO-STAGE ENGINE ---
+            is_hyper_growth = raw_rate > 0.25
+
             use_two_stage = st.checkbox(
-                f"⚡ Two-Stage Growth (High Momentum → Mature)",
+                "⚡ Two-Stage Growth",
                 value=is_hyper_growth,
                 key=f"twostage_{ticker}",
-                help="Models high growth for the next few years, followed by a gradual slowdown."
+                help=(
+                    "Models near-term AI momentum followed by long-term mean reversion.\n\n"
+                    "• Stage 1: Runs at high momentum for the first few years.\n"
+                    "• Stage 2: Automatically slows down to a mature, sustainable rate."
+                )
             )
 
             if use_two_stage:
-                col_s1, col_s2 = st.columns(2)
-                with col_s1:
-                    stage1_years = st.slider(
-                        "Momentum Years (Stage 1)",
-                        min_value=1, max_value=min(horizon_years, 7), value=3,
-                        key=f"s1_yrs_{ticker}"
-                    )
-                    stage1_rate = st.number_input(
-                        "Stage 1 CAGR (%/yr)",
-                        min_value=5.0, max_value=60.0,
-                        value=float(round(raw_rate * 100 * 0.75, 1)),  # Suggests ~35% for NVDA
-                        step=1.0, key=f"s1_rate_{ticker}"
-                    ) / 100.0
-                with col_s2:
-                    st.caption(f"**Stage 2 (Years {stage1_years + 1} to {horizon_years})**")
-                    stage2_rate = st.number_input(
-                        "Stage 2 Mature CAGR (%/yr)",
-                        min_value=5.0, max_value=30.0, value=18.0,
-                        step=0.5, key=f"s2_rate_{ticker}"
-                    ) / 100.0
+                # 1. Slider for Duration (Full width, no squishing!)
+                stage1_years = st.slider(
+                    f"Stage 1 Duration (Years)",
+                    min_value=1,
+                    max_value=min(horizon_years, 7),
+                    value=3,
+                    key=f"s1_yrs_{ticker}",
+                    help="How many years will this stock maintain high momentum before slowing down?"
+                )
+
+                # 2. Stage 1 Rate (Clean vertical stack)
+                stage1_rate = st.number_input(
+                    f"Stage 1 Momentum CAGR (%/yr)",
+                    min_value=5.0,
+                    max_value=60.0,
+                    value=float(round(raw_rate * 100 * 0.75, 2)),
+                    format="%.2f",
+                    step=0.5,
+                    key=f"s1_rate_{ticker}"
+                ) / 100.0
+
+                # 3. Stage 2 Rate (Clean vertical stack)
+                stage2_rate = st.number_input(
+                    f"Stage 2 Mature CAGR (Years {stage1_years + 1} to {horizon_years})",
+                    min_value=5.0,
+                    max_value=30.0,
+                    value=18.00,
+                    format="%.2f",
+                    step=0.5,
+                    key=f"s2_rate_{ticker}",
+                    help="The realistic long-term rate once the hyper-growth phase cools down."
+                ) / 100.0
+
+                st.caption(
+                    f"🚀 **Phase 1:** {stage1_rate * 100:.1f}% for {stage1_years} yrs $\\rightarrow$ "
+                    f"📉 **Phase 2:** {stage2_rate * 100:.1f}% thereafter."
+                )
             else:
                 stage1_years = horizon_years
                 stage1_rate = forward_cagr
