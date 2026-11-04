@@ -122,35 +122,41 @@ total_initial_cash = 0
 total_monthly_cash = 0
 
 for ticker in selected_tickers:
-    with st.sidebar.expander(f"📌 {ticker} Allocation", expanded=True):
+    with st.sidebar.expander(f"📌 {ticker} Settings", expanded=True):
         raw_rate, msg = fetch_stock_cagr(ticker, lookback)
+        st.caption(f"📈 {msg}")
 
-        # Check if stock exceeds realistic ceiling
-        if enable_mean_reversion and raw_rate > MAX_REALISTIC_CAGR:
-            rate = MAX_REALISTIC_CAGR
-            st.warning(f"⚠️ {ticker} grew at {raw_rate * 100:.1f}%, but was capped at 20.0% due to Mean Reversion.")
-        else:
-            rate = raw_rate
-            st.caption(f"📈 {msg}")
+        # 1. Smart Default Suggestion:
+        # If historical is > 20%, suggest 18% as a realistic mean-reverted rate.
+        # Otherwise, suggest the actual historical rate.
+        suggested_forward_rate = min(raw_rate, 0.18) if enable_mean_reversion else raw_rate
+
+        # 2. Per-Stock Forward Return Input:
+        forward_cagr = st.number_input(
+            f"Expected Future CAGR (%/yr)",
+            min_value=1.0,
+            max_value=100.0,
+            value=float(round(suggested_forward_rate * 100, 1)),
+            step=0.5,
+            key=f"cagr_{ticker}",
+            help=f"Historic was {raw_rate * 100:.1f}%. Adjust what you expect {ticker} to do over your horizon."
+        ) / 100.0
 
         c1, c2 = st.columns(2)
-
         with c1:
-            init_val = st.number_input(f"Initial $ ({ticker})",
-            min_value = 0.0, value=0.0, step=0.0, key=f"init_{ticker}")
-
+            init_val = st.number_input(f"Initial $", min_value=0.0, value=0.0, step=50.0, key=f"init_{ticker}")
         with c2:
-            month_val = st.number_input(f"Monthly $ ({ticker})", min_value=0.0, value=0.0, step=25.0,
-                                        key=f"month_{ticker}")
+            month_val = st.number_input(f"Monthly $", min_value=0.0, value=0.0, step=25.0, key=f"month_{ticker}")
 
-            asset_config[ticker] = {
-                "cagr": rate,
-                "monthly_r": rate / 12.0,
-                "initial": init_val,
-                "monthly": month_val
-            }
-            total_initial_cash += init_val
-            total_monthly_cash += month_val
+        # The simulator uses YOUR per-stock forward rate!
+        asset_config[ticker] = {
+            "cagr": forward_cagr,
+            "monthly_r": forward_cagr / 12.0,
+            "initial": init_val,
+            "monthly": month_val
+        }
+        total_initial_cash += init_val
+        total_monthly_cash += month_val
 
 st.sidebar.info(
     f"**Total Capital Today:** ${total_initial_cash:,.0f} SGD\n\n**Total Monthly Flow:** ${total_monthly_cash:,.0f} SGD/mo")
