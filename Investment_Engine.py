@@ -110,7 +110,7 @@ MAX_REALISTIC_CAGR = st.sidebar.slider(
     max_value=30.0,
     value=20.0,
     step=1.0,
-    help="Caps hyper-growth stocks to this ceiling so 10-year projections remain realistic."
+    help="Caps hyper-growth stocks to this ceiling so 5 to 10 years projections remain realistic."
 ) / 100.0
 
 st.sidebar.markdown("---")
@@ -136,11 +136,28 @@ for ticker in selected_tickers:
             f"Expected Future CAGR (%/yr)",
             min_value=1.0,
             max_value=100.0,
-            value=float(round(suggested_forward_rate * 100, 1)),
+            value=float(round(suggested_forward_rate * 100, 2)),
+            format="%.2f",
             step=0.5,
             key=f"cagr_{ticker}",
             help=f"Historic was {raw_rate * 100:.1f}%. Adjust what you expect {ticker} to do over your horizon."
         ) / 100.0
+
+        # Smart Default Suggestion
+        is_capped = enable_mean_reversion and raw_rate > 0.18
+        suggested_forward_rate = 0.18 if is_capped else raw_rate
+
+        # 💡 DYNAMIC EXPLANATION FOR THE USER
+        if is_capped:
+            st.caption(
+                f"🧠 **Auto-Dampened to 18.0%**: {ticker}'s past 5Y growth ({raw_rate * 100:.2f}%) "
+                f"was reduced to a realistic long-term ceiling. *You can freely edit this above!*"
+            )
+        else:
+            st.caption(
+                f"📊 **Pre-Filled with 5Y History ({raw_rate * 100:.2f}%)**: "
+                f"Based on real Yahoo Finance data. *You can freely edit this above!*"
+            )
 
         c1, c2 = st.columns(2)
         with c1:
@@ -148,13 +165,53 @@ for ticker in selected_tickers:
         with c2:
             month_val = st.number_input(f"Monthly $", min_value=0.0, value=0.0, step=25.0, key=f"month_{ticker}")
 
-        # The simulator uses YOUR per-stock forward rate!
-        asset_config[ticker] = {
-            "cagr": forward_cagr,
-            "monthly_r": forward_cagr / 12.0,
-            "initial": init_val,
-            "monthly": month_val
-        }
+            # --- ⚡ TWO-STAGE GROWTH ENGINE ---
+            is_hyper_growth = raw_rate > 0.25  # Automatically checks if stock is crazy hot like NVDA
+
+            use_two_stage = st.checkbox(
+                f"⚡ Two-Stage Growth (High Momentum → Mature)",
+                value=is_hyper_growth,
+                key=f"twostage_{ticker}",
+                help="Models high growth for the next few years, followed by a gradual slowdown."
+            )
+
+            if use_two_stage:
+                col_s1, col_s2 = st.columns(2)
+                with col_s1:
+                    stage1_years = st.slider(
+                        "Momentum Years (Stage 1)",
+                        min_value=1, max_value=min(horizon_years, 7), value=3,
+                        key=f"s1_yrs_{ticker}"
+                    )
+                    stage1_rate = st.number_input(
+                        "Stage 1 CAGR (%/yr)",
+                        min_value=5.0, max_value=60.0,
+                        value=float(round(raw_rate * 100 * 0.75, 1)),  # Suggests ~35% for NVDA
+                        step=1.0, key=f"s1_rate_{ticker}"
+                    ) / 100.0
+                with col_s2:
+                    st.caption(f"**Stage 2 (Years {stage1_years + 1} to {horizon_years})**")
+                    stage2_rate = st.number_input(
+                        "Stage 2 Mature CAGR (%/yr)",
+                        min_value=5.0, max_value=30.0, value=18.0,
+                        step=0.5, key=f"s2_rate_{ticker}"
+                    ) / 100.0
+            else:
+                stage1_years = horizon_years
+                stage1_rate = forward_cagr
+                stage2_rate = forward_cagr
+
+            # Save stage settings into asset_config
+            asset_config[ticker] = {
+                "initial": init_val,
+                "monthly": month_val,
+                "stage1_months": stage1_years * 12,
+                "stage1_monthly_r": stage1_rate / 12.0,
+                "stage2_monthly_r": stage2_rate / 12.0,
+                "monthly_r": stage1_rate / 12.0,
+                "cagr": stage1_rate
+            }
+
         total_initial_cash += init_val
         total_monthly_cash += month_val
 
@@ -295,7 +352,18 @@ for m in range(1, total_months + 1):
 
     for ticker in all_active_tickers:
         cfg = asset_config[ticker]
-        r = cfg["monthly_r"]
+        for ticker in all_active_tickers:
+            cfg = asset_config[ticker]
+
+            # 🧠 DYNAMIC TWO-STAGE SELECTION:
+            # If within Stage 1, use high momentum rate. If passed Stage 1, switch to mature rate!
+            if m <= cfg.get("stage1_months", total_months):
+                r = cfg.get("stage1_monthly_r", cfg.get("monthly_r", 0.0))
+            else:
+                r = cfg.get("stage2_monthly_r", cfg.get("monthly_r", 0.0))
+
+            # 1. Money makes money (compound interest)
+            current_balances[ticker] *= (1 + r)
 
         # 1. Money makes money (compound interest)
         current_balances[ticker] *= (1 + r)
