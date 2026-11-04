@@ -6,6 +6,7 @@ from datetime import datetime
 from dateutil.relativedelta import relativedelta
 import yfinance as yf
 import numpy as np
+import json
 
 # 1. Page Styling and Configuration
 st.set_page_config(
@@ -69,16 +70,20 @@ def fetch_stock_cagr(ticker: str, lookback_years: int = 5):
     except Exception:
         return 0.08, "Fetch error (Default 8.0%)"
 
+
 # 3. Session State (Stores custom ad-hoc cash injections)
 if "injections" not in st.session_state:
     st.session_state.injections = []
 
 # 4. Sidebar: Multi Stock Asset Builder
-popular_tickers = ["VWRA.L", "SPY", "NVDA", "AAPL", "GOOGL", "MSFT", "TSLA", "AMZN"]
+popular_tickers = ["SPY", "QQQ", "VOO", "VWRA.L", "CSPX.L", "VT", "SMH",
+    "NVDA", "AAPL", "MSFT", "GOOGL", "AMZN", "META", "TSLA", "AMD"]
+if "ticker_pool" not in st.session_state:
+    st.session_state.ticker_pool = popular_tickers
 selected_tickers = st.sidebar.multiselect(
     "Select Stocks / ETFs to Invest In:",
     options=popular_tickers,
-    default=["SPY", "NVDA", "AAPL"],
+    default=[],
     help="You can also type any custom ticker from Yahoo Finance!"
 )
 
@@ -90,6 +95,16 @@ lookback = st.sidebar.selectbox("Historical Lookback Window", [3, 5, 10], index=
 horizon_years = st.sidebar.slider("Investment Horizon (Years)", 1, 30, 5)
 total_months = horizon_years * 12
 
+# SMART RISK: MEAN REVERSION TOGGLE
+st.sidebar.markdown("---")
+st.sidebar.header("🧠 Smart Risk Engine")
+enable_mean_reversion = st.sidebar.checkbox(
+    "Apply Mean Reversion",
+    value=True,
+    help="Caps extreme historic rates (like NVDA 47%) to a sustainable 20% long-term ceiling."
+)
+MAX_REALISTIC_CAGR = 0.20  # 20% annual ceiling
+
 st.sidebar.markdown("---")
 st.sidebar.header("💵 Starting and Monthly Allocation")
 
@@ -100,8 +115,15 @@ total_monthly_cash = 0
 
 for ticker in selected_tickers:
     with st.sidebar.expander(f"📌 {ticker} Allocation", expanded=True):
-        rate, msg = fetch_stock_cagr(ticker, lookback)
-        st.caption(f"📈 {msg}")
+        raw_rate, msg = fetch_stock_cagr(ticker, lookback)
+
+        # Check if stock exceeds realistic ceiling
+        if enable_mean_reversion and raw_rate > MAX_REALISTIC_CAGR:
+            rate = MAX_REALISTIC_CAGR
+            st.warning(f"⚠️ {ticker} grew at {raw_rate * 100:.1f}%, but was capped at 20.0% due to Mean Reversion.")
+        else:
+            rate = raw_rate
+            st.caption(f"📈 {msg}")
 
         c1, c2 = st.columns(2)
 
@@ -124,6 +146,36 @@ for ticker in selected_tickers:
 
     st.sidebar.info(
         f"**Total Capital Today:** ${total_initial_cash:,.0f} SGD\n\n**Total Monthly Flow:** ${total_monthly_cash:,.0f} SGD/mo")
+
+    # PRIVACY: SAVE / RESTORE PROFILE TO LAPTOP
+    st.sidebar.markdown("---")
+    st.sidebar.subheader("💾 Backup & Restore (Privacy Safe)")
+
+    # a) Download personal portfolio to your own Mac
+    user_export_data = json.dumps({
+        "tickers": selected_tickers,
+        "allocations": {t: {"initial": asset_config[t]["initial"], "monthly": asset_config[t]["monthly"]} for t in
+                        selected_tickers},
+        "injections": st.session_state.injections
+    }, indent=4)
+
+    st.sidebar.download_button(
+        label="📥 Download My Portfolio (.json)",
+        data=user_export_data,
+        file_name="my_portfolio.json",
+        mime="application/json",
+        help="Saves your exact portfolio directly to your laptop so nobody else can see it."
+    )
+
+    # b) Upload file when visiting in the future
+    uploaded_profile = st.sidebar.file_uploader("📤 Restore from File", type=["json"])
+    if uploaded_profile is not None:
+        try:
+            profile_data = json.load(uploaded_profile)
+            st.session_state.injections = profile_data.get("injections", [])
+            st.sidebar.success("Profile Restored! Re-running...")
+        except Exception:
+            st.sidebar.error("Invalid portfolio file.")
 
 
 # 5. AD-HOC CASH INJECTION SIMULATOR (The "What-If" Engine)
