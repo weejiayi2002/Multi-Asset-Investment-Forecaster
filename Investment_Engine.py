@@ -327,6 +327,7 @@ if st.session_state.injections:
             st.rerun()
 
 # ---------------------------------------------------------
+# ---------------------------------------------------------
 # 6. MULTI-ASSET RECURSIVE COMPOUNDING ENGINE
 # ---------------------------------------------------------
 dates_timeline = [START_DATE + relativedelta(months=i) for i in range(total_months + 1)]
@@ -337,55 +338,52 @@ for item in st.session_state.injections:
     key = (item["Ticker"], item["Month"])
     injection_map[key] = injection_map.get(key, 0.0) + item["Amount"]
 
-# Tracking balances per ticker over time
+# Make sure all tickers are tracked cleanly
 all_active_tickers = list(asset_config.keys())
+
+# Initialize starting points
 asset_histories = {ticker: [asset_config[ticker]["initial"]] for ticker in all_active_tickers}
 current_balances = {ticker: asset_config[ticker]["initial"] for ticker in all_active_tickers}
 cost_basis_history = [total_initial_cash]
 running_cost = total_initial_cash
 
-# Current balances
-current_balances = {ticker: asset_config[ticker]["initial"] for ticker in selected_tickers}
-
+# Compounding Month-by-Month Loop
 for m in range(1, total_months + 1):
     month_total_deposit = 0.0
 
     for ticker in all_active_tickers:
         cfg = asset_config[ticker]
-        for ticker in all_active_tickers:
-            cfg = asset_config[ticker]
 
-            # 🧠 DYNAMIC TWO-STAGE SELECTION:
-            # If within Stage 1, use high momentum rate. If passed Stage 1, switch to mature rate!
-            if m <= cfg.get("stage1_months", total_months):
-                r = cfg.get("stage1_monthly_r", cfg.get("monthly_r", 0.0))
-            else:
-                r = cfg.get("stage2_monthly_r", cfg.get("monthly_r", 0.0))
-
-            # 1. Money makes money (compound interest)
-            current_balances[ticker] *= (1 + r)
+        # 🧠 Two-Stage Rate Selection
+        if m <= cfg.get("stage1_months", total_months):
+            r = cfg.get("stage1_monthly_r", cfg.get("monthly_r", 0.0))
+        else:
+            r = cfg.get("stage2_monthly_r", cfg.get("monthly_r", 0.0))
 
         # 1. Money makes money (compound interest)
         current_balances[ticker] *= (1 + r)
 
         # 2. Add regular monthly inflow
-        current_balances[ticker] += cfg["monthly"]
-        month_total_deposit += cfg["monthly"]
+        current_balances[ticker] += cfg.get("monthly", 0.0)
+        month_total_deposit += cfg.get("monthly", 0.0)
 
-        # 3. Add ad-hoc injection if present for this ticker & month
+        # 3. Add ad-hoc injection if present
         if (ticker, m) in injection_map:
             extra = injection_map[(ticker, m)]
             current_balances[ticker] += extra
             month_total_deposit += extra
 
-        # Record history
+        # 4. Save history for this month (Correct Indentation!)
         asset_histories[ticker].append(current_balances[ticker])
 
     running_cost += month_total_deposit
     cost_basis_history.append(running_cost)
 
-# Build total portfolio trajectory
-portfolio_history = [sum(asset_histories[ticker][i] for ticker in selected_tickers) for i in range(total_months + 1)]
+# Build total portfolio trajectory across all active tickers
+portfolio_history = [
+    sum(asset_histories[ticker][i] for ticker in all_active_tickers)
+    for i in range(total_months + 1)
+]
 
 final_wealth = portfolio_history[-1]
 final_invested = cost_basis_history[-1]
