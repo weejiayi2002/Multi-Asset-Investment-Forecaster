@@ -37,7 +37,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-start_date = datetime.today()
+START_DATE = datetime.today()
 
 # 2. Yahoo Finance Live Engine
 @st.cache_data(ttl=8640)
