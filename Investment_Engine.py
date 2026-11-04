@@ -155,7 +155,7 @@ with st.expander("⚡ Simulate an Ad-Hoc Cash Injection (The 'What-If' Tool)", e
     with col_b:
         inj_month = st.number_input("In Which Month?", min_value=1, max_value=total_months, value=1)
     with col_c:
-        inj_amount = st.number_input("Injection Amount ($)", min_value=100.0, value=0.0, step=100.0)
+        inj_amount = st.number_input("Injection Amount ($)", min_value=0.0, value=0.0, step=100.0)
     with col_d:
         inj_note = st.text_input("Reason / Note", value="")
 
