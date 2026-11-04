@@ -101,9 +101,17 @@ st.sidebar.header("🧠 Smart Risk Engine")
 enable_mean_reversion = st.sidebar.checkbox(
     "Apply Mean Reversion",
     value=True,
-    help="Caps extreme historic rates (like NVDA 47%) to a sustainable 20% long-term ceiling."
+    help="Caps extreme historic rates (like NVDA 47%) to a sustainable long-term ceiling."
 )
-MAX_REALISTIC_CAGR = 0.20  # 20% annual ceiling
+# ✅ Interactive Mean Reversion Ceiling Slider
+MAX_REALISTIC_CAGR = st.sidebar.slider(
+    "Max Realistic Growth Ceiling (%)",
+    min_value=12.0,
+    max_value=30.0,
+    value=20.0,
+    step=1.0,
+    help="Caps hyper-growth stocks to this ceiling so 10-year projections remain realistic."
+) / 100.0
 
 st.sidebar.markdown("---")
 st.sidebar.header("💵 Starting and Monthly Allocation")
@@ -131,9 +139,9 @@ for ticker in selected_tickers:
             init_val = st.number_input(f"Initial $ ({ticker})",
             min_value = 0.0, value=0.0, step=0.0, key=f"init_{ticker}")
 
-            with c2:
-                month_val = st.number_input(f"Monthly $ ({ticker})", min_value=0.0, value=0.0, step=25.0,
-                                            key=f"month_{ticker}")
+        with c2:
+            month_val = st.number_input(f"Monthly $ ({ticker})", min_value=0.0, value=0.0, step=25.0,
+                                        key=f"month_{ticker}")
 
             asset_config[ticker] = {
                 "cagr": rate,
@@ -144,38 +152,38 @@ for ticker in selected_tickers:
             total_initial_cash += init_val
             total_monthly_cash += month_val
 
-    st.sidebar.info(
-        f"**Total Capital Today:** ${total_initial_cash:,.0f} SGD\n\n**Total Monthly Flow:** ${total_monthly_cash:,.0f} SGD/mo")
+st.sidebar.info(
+    f"**Total Capital Today:** ${total_initial_cash:,.0f} SGD\n\n**Total Monthly Flow:** ${total_monthly_cash:,.0f} SGD/mo")
 
-    # PRIVACY: SAVE / RESTORE PROFILE TO LAPTOP
-    st.sidebar.markdown("---")
-    st.sidebar.subheader("💾 Backup & Restore (Privacy Safe)")
+# PRIVACY: SAVE / RESTORE PROFILE TO LAPTOP
+st.sidebar.markdown("---")
+st.sidebar.subheader("💾 Backup & Restore (Privacy Safe)")
 
-    # a) Download personal portfolio to your own Mac
-    user_export_data = json.dumps({
-        "tickers": selected_tickers,
-        "allocations": {t: {"initial": asset_config[t]["initial"], "monthly": asset_config[t]["monthly"]} for t in
-                        selected_tickers},
-        "injections": st.session_state.injections
-    }, indent=4)
+# a) Download personal portfolio to your own Mac
+user_export_data = json.dumps({
+    "tickers": selected_tickers,
+    "allocations": {t: {"initial": asset_config[t]["initial"], "monthly": asset_config[t]["monthly"]} for t in
+                    selected_tickers},
+    "injections": st.session_state.injections
+}, indent=4)
 
-    st.sidebar.download_button(
-        label="📥 Download My Portfolio (.json)",
-        data=user_export_data,
-        file_name="my_portfolio.json",
-        mime="application/json",
-        help="Saves your exact portfolio directly to your laptop so nobody else can see it."
-    )
+st.sidebar.download_button(
+    label="📥 Download My Portfolio (.json)",
+    data=user_export_data,
+    file_name="my_portfolio.json",
+    mime="application/json",
+    help="Saves your exact portfolio directly to your laptop so nobody else can see it."
+)
 
-    # b) Upload file when visiting in the future
-    uploaded_profile = st.sidebar.file_uploader("📤 Restore from File", type=["json"])
-    if uploaded_profile is not None:
-        try:
-            profile_data = json.load(uploaded_profile)
-            st.session_state.injections = profile_data.get("injections", [])
-            st.sidebar.success("Profile Restored! Re-running...")
-        except Exception:
-            st.sidebar.error("Invalid portfolio file.")
+# b) Upload file when visiting in the future
+uploaded_profile = st.sidebar.file_uploader("📤 Restore from File", type=["json"])
+if uploaded_profile is not None:
+    try:
+        profile_data = json.load(uploaded_profile)
+        st.session_state.injections = profile_data.get("injections", [])
+        st.sidebar.success("Profile Restored! Re-running...")
+    except Exception:
+        st.sidebar.error("Invalid portfolio file.")
 
 
 # 5. AD-HOC CASH INJECTION SIMULATOR (The "What-If" Engine)
