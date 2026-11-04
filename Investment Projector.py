@@ -2,11 +2,14 @@ import streamlit as st  # Turns code into websites
 import pandas as pd
 import plotly.express as px  # Draw nice interactive line charts
 import plotly.graph_objects as go
+from datetime import datetime
+from dateutil.relativedelta import relativedelta
+import yfinance as yf
 import numpy as np
 
 # 1. Page Styling and Configuration
 st.set_page_config(
-    page_title="Wealth Simulator",
+    page_title="Multi-Asset Portfolio Engine",
     page_icon="📈",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -18,231 +21,291 @@ st.markdown("""
     .metric-card {
         background-color: #f8f9fa;
         border: 1px solid #e9ecef;
-        padding: 18px;
+        padding: 16px;
         border-radius: 12px;
         box-shadow: 0 2px 4px rgba(0,0,0,0.02);
     }
-    .metric-label { font-size: 0.85rem; color: #6c757d; font-weight: 600; text-transform: uppercase; }
-    .metric-value { font-size: 1.6rem; color: #212529; font-weight: 700; margin-top: 4px; }
+    .metric-label { font-size: 0.8rem; color: #6c757d; font-weight: 600; text-transform: uppercase; }
+    .metric-value { font-size: 1.5rem; color: #212529; font-weight: 700; margin-top: 4px; }
+    .impact-box {
+        background-color: #e8f5e9;
+        border-left: 5px solid #2e7d32;
+        padding: 12px;
+        border-radius: 6px;
+        margin-top: 10px;
+    }
     </style>
 """, unsafe_allow_html=True)
 
-# 2. The Math
-def calculate_future_value(principal: float, monthly_deposit: float,
-                           annual_rate: float, months: int):
-    """Computes compound growth using vectorized closed-form financial
-    equations.
-       Formula: FV = P * (1+r)^t + PMT * [((1+r)^t-1) / r]
-    """
-    t = np.arange(1, months + 1)
-    r = annual_rate / 12
+start_date = datetime.today()
 
-    if r == 0:
-        fv = principal + (monthly_deposit * t)
-    else:
-        fv_lump_sum = principal * (1 + r) ** t
-        fv_annuity = monthly_deposit * (((1 + r) ** t) - 1) / r
-        fv = fv_lump_sum + fv_annuity
+# 2. Yahoo Finance Live Engine
+@st.cache_data(ttl=8640)
+def fetch_stock_cagr(ticker: str, lookback_years: int = 5):
+    """Fetches real historical prices and computes annualized CAGR"""
+    try:
+        data = yf.download(ticker, period=f"{lookback_years}y", progress=False)
+        if data.empty or len(data) < 20:
+            return 0.08, "Data unvailable (Default 8.0%)"
 
-    cumulative_deposits = principal + (monthly_deposit * t)
-    return t, fv, cumulative_deposits
+        close_prices = data["Close"]
+        if isinstance(close_prices, pd.DataFrame):
+            close_prices = close_prices.iloc[:, 0]
 
-# 3. Sidebar: User Input Engine
-st.sidebar.header("🕹️ Capital & Cash Flow")
+        start_price = float(close_prices.iloc[0])
+        end_price = float(close_prices.iloc[-1])
+        cagr = (end_price / start_price) ** (1.0 / lookback_years) - 1.0
+        return cagr, f"{lookback_years}Y Hist. CAGR: {cagr * 100:.1f}%"
+    except Exception:
+        return 0.08, "Fetch Error (Default 8.0%)"
 
-# Starting Capital
-initial_capital = st.sidebar.number_input(
-    "Starting Capital (SGD)",
-    min_value=0.0,
-    value=None,
-    placeholder="Type any amount",
-    step=1.0,
-    help="Type in your exact starting cash"
+# 3. Session State (Stores custom ad-hoc cash injections)
+if "injections" not in st.session_state:
+    st.session_state.injections = [
+        {"Ticker" : "NVDA", "Month": 4, "Amount": 2000.0, "Note": "Tuition Freelance"}
+    ]
+
+# 4. Sidebar: Multi Stock Asset Builder
+popular_tickers = ["VWRA.L", "SPY", "NVDA", "AAPL", "GOOGL", "MSFT", "TSLA", "AMZN"]
+selected_tickers = st.sidebar.multiselect(
+    "Select Stocks / ETFs to Invest In:",
+    options=popular_tickers,
+    default=["SPY", "NVDA", "AAPL"],
+    help="You can also type any custom ticker from Yahoo Finance!"
 )
 
-# Monthly Inflow
-monthly_inflow = st.sidebar.number_input(
-    "Monthly Contributions (SGD)",
-    min_value=0.0,
-    value=None,
-    placeholder="Type monthly investments amt",
-    step=1.0,
-    help="Type in how much you plan to invest monthly"
-)
+if not selected_tickers:
+    st.warning("Please select atleast one stock/ETF to begin")
+    st.stop()
 
-initial_capital = initial_capital if initial_capital is None else 0.0  # Prevent crash from no input (None)
-monthly_inflow = monthly_inflow if monthly_inflow is not None else 0.0
-
-
-# Duration
-horizon_years = st.sidebar.slider(
-    "Time Horizon (Years)",
-    min_value=1,
-    max_value=50,
-    value=15
-)
+lookback = st.sidebar.selectbox("Historical Lookback Window", [3, 5, 10], index=1)
+horizon_years = st.sidebar.slider("Investment Horizon (Years)", 1, 30, 5)
+total_months = horizon_years * 12
 
 st.sidebar.markdown("---")
-st.sidebar.header("⚙️ Macro Assumptions")
-adjust_inflation = st.sidebar.checkbox("Adjust for Inflation (real value)", value=False)
-inflation_rate = 0.025 if adjust_inflation else 0.0  # Assumes 2.5%
+st.sidebar.header("💵 Starting and Monthly Allocation")
 
-# 4. Main Page : Asset Allocation Set-Up
-st.title("💼 Institutional Portfolio Modeler")
-st.caption("Design your Core-Satellite strategy and visualize long-term compounding")
+# Collect individual stock allocations
+asset_config = {}
+total_initial_cash = 0
+total_monthly_cash = 0
 
-st.subheader("1. COnfigure Asset Weights and Yields")
-col1, col2, col3 = st.columns(3)
+for ticker in selected_tickers:
+    with st.sidebar.expander(f"📌 {ticker} Allocation", expanded=True):
+        rate, msg = fetch_stock_cagr(ticker, lookback)
+        st.caption(f"📈 {msg}")
 
-with col1:
-    st.markdown("**Core: Global ETF (e.g. VWRA)**")
-    core_weight = st.slider("Weight (%)", 0, 100, 80, key='core_w') / 100.0  # Unsure
-    core_return = st.number_input("Expected Return (%/yr)", value=9.5, step=0.5) / 100.0
+        c1, c2 = st.columns(2)
 
-with col2:
-    st.markdown("**Satellite: HIgh-Growth Tech (e.g. NVDA/GOOGL)**")
-    satellite_weight = st.slider("Weight (%)", 0, 100, 20, key="sat_w") / 100.0
-    satellite_return = st.number_input("Expected Return (%/yr)", value = 14.0, step=0.5) / 100.0
+        with c1:
+            init_val = st.number_input(f"Initial $ ({ticker})",
+            min_value = 0.0, value=2000.0, step=100.0, key=f"init_{ticker}")
 
-with col3:
-     st.markdown("**Benchmark: Risk-Free / Cash **")
-     cash_return = st.number_input("Bank/Cash Yield (%/yr)", value=2.5, step=0.25) / 100.0
+            with c2:
+                month_val = st.number_input(f"Monthly $ ({ticker})", min_value=0.0, value=100.0, step=25.0,
+                                            key=f"month_{ticker}")
 
-# Calculate Weighted Blended Rate
-total_weight = core_weight + satellite_weight
-if not np.isclose(total_weight, 1.0):
-    st.warning(f"⚠️ Allocation weights must sum to 100% Current sum: {total_weight * 100:.0f}%")
+            asset_config[ticker] = {
+                "cagr": rate,
+                "monthly_r": rate / 12.0,
+                "initial": init_val,
+                "monthly": month_val
+            }
+            total_initial_cash += init_val
+            total_monthly_cash += month_val
 
-effective_annual_rate = (core_weight * core_return) + (satellite_weight * satellite_return) - inflation_rate
-effective_cash_rate = cash_return - inflation_rate
+    st.sidebar.info(
+        f"**Total Capital Today:** ${total_initial_cash:,.0f} SGD\n\n**Total Monthly Flow:** ${total_monthly_cash:,.0f} SGD/mo")
 
-# 5. Data Computation
-total_months = horizon_years * 12
-timeline_months, portfolio_vals, total_deposits = calculate_future_value(
-    initial_capital, monthly_inflow, effective_annual_rate, total_months
-)
-_, cash_vals,_ = calculate_future_value(initial_capital, monthly_inflow, effective_cash_rate, total_months)
-final_balance = portfolio_vals[-1]
-final_invested = total_deposits[-1]
-total_gains = final_balance - final_invested
-roi_pct = (total_gains / final_invested) * 100
+# 5. Cash Injections
+# 5. AD-HOC CASH INJECTION SIMULATOR (The "What-If" Engine)
+# ---------------------------------------------------------
+st.title("💼 Apex Multi-Asset Wealth Modeler")
+st.caption(
+    f"Projecting cashflow across {len(selected_tickers)} assets over a **{horizon_years}-Year ({total_months} Months)** timeline.")
 
-# 6. KPI Dashboard Metrics
-st.subheader("2. Performance Overview")
-m1, m2, m3, m4 = st.columns(4)
+with st.expander("⚡ Simulate an Ad-Hoc Cash Injection (The 'What-If' Tool)", expanded=True):
+    col_a, col_b, col_c, col_d = st.columns(4)
 
-with m1:
+    with col_a:
+        inj_ticker = st.selectbox("Target Stock", selected_tickers)
+    with col_b:
+        inj_month = st.number_input("In Which Month?", min_value=1, max_value=total_months, value=4)
+    with col_c:
+        inj_amount = st.number_input("Injection Amount ($)", min_value=100.0, value=2000.0, step=100.0)
+    with col_d:
+        inj_note = st.text_input("Reason / Note", value="Internship Pay")
+
+    # Math: What is the isolated impact of this single injection?
+    target_rate = asset_config[inj_ticker]["monthly_r"]
+    remaining_months = total_months - inj_month
+    compounded_impact = inj_amount * ((1 + target_rate) ** remaining_months)
+    pure_profit = compounded_impact - inj_amount
+
+    future_date = (START_DATE + relativedelta(months=inj_month)).strftime("%B %Y")
+
     st.markdown(f"""
-            <div class="metric-card">
-                <div class="metric-label">Total Invested</div>
-                <div class="metric-value">${final_invested:,.0f}</div>
-            </div>
-        """, unsafe_allow_html=True)
-with m2:
-    st.markdown(f"""
-        <div class="metric-card">
-            <div class="metric-label">Estimated Final Wealth</div>
-            <div class="metric-value" style="color: #0d6efd;">${final_balance:,.0f}</div>
+        <div class="impact-box">
+            <b>💡 Decision Impact:</b> Injecting <b>${inj_amount:,.0f} SGD</b> into <b>{inj_ticker}</b> on <b>{future_date} (Month {inj_month})</b> 
+            leaves it to compound for <b>{remaining_months} months</b>.<br>
+            By the end of Year {horizon_years}, that single injection alone grows into 
+            <b style="color: #2e7d32;">${compounded_impact:,.0f} SGD</b> (+${pure_profit:,.0f} free profit)!
         </div>
     """, unsafe_allow_html=True)
-with m3:
+
+    if st.button("➕ Lock This Injection Into Portfolio"):
+        st.session_state.injections.append({
+            "Ticker": inj_ticker,
+            "Month": int(inj_month),
+            "Amount": float(inj_amount),
+            "Note": inj_note
+        })
+        st.success(f"Added ${inj_amount:,.0f} injection for {inj_ticker} at Month {inj_month}!")
+
+# Display current active injections
+if st.session_state.injections:
+    with st.expander("📋 Current Active Injections (Click to View / Clear)"):
+        inj_df = pd.DataFrame(st.session_state.injections)
+        st.dataframe(inj_df, use_container_width=True)
+        if st.button("🗑️ Clear All Injections"):
+            st.session_state.injections = []
+            st.rerun()
+
+# ---------------------------------------------------------
+# 6. MULTI-ASSET RECURSIVE COMPOUNDING ENGINE
+# ---------------------------------------------------------
+dates_timeline = [START_DATE + relativedelta(months=i) for i in range(total_months + 1)]
+
+# Pre-process injections into a quick lookup: {(ticker, month): total_amount}
+injection_map = {}
+for item in st.session_state.injections:
+    key = (item["Ticker"], item["Month"])
+    injection_map[key] = injection_map.get(key, 0.0) + item["Amount"]
+
+# Tracking balances per ticker over time
+asset_histories = {ticker: [asset_config[ticker]["initial"]] for ticker in selected_tickers}
+cost_basis_history = [total_initial_cash]
+running_cost = total_initial_cash
+
+# Current balances
+current_balances = {ticker: asset_config[ticker]["initial"] for ticker in selected_tickers}
+
+for m in range(1, total_months + 1):
+    month_total_deposit = 0.0
+
+    for ticker in selected_tickers:
+        cfg = asset_config[ticker]
+        r = cfg["monthly_r"]
+
+        # 1. Money makes money (compound interest)
+        current_balances[ticker] *= (1 + r)
+
+        # 2. Add regular monthly inflow
+        current_balances[ticker] += cfg["monthly"]
+        month_total_deposit += cfg["monthly"]
+
+        # 3. Add ad-hoc injection if present for this ticker & month
+        if (ticker, m) in injection_map:
+            extra = injection_map[(ticker, m)]
+            current_balances[ticker] += extra
+            month_total_deposit += extra
+
+        # Record history
+        asset_histories[ticker].append(current_balances[ticker])
+
+    running_cost += month_total_deposit
+    cost_basis_history.append(running_cost)
+
+# Build total portfolio trajectory
+portfolio_history = [sum(asset_histories[ticker][i] for ticker in selected_tickers) for i in range(total_months + 1)]
+
+final_wealth = portfolio_history[-1]
+final_invested = cost_basis_history[-1]
+final_pnl = final_wealth - final_invested
+final_roi = (final_pnl / final_invested) * 100 if final_invested > 0 else 0.0
+
+# ---------------------------------------------------------
+# 7. PERFORMANCE OVERVIEW & VISUALIZATIONS
+# ---------------------------------------------------------
+st.subheader("Performance & Unrealized PnL")
+k1, k2, k3, k4 = st.columns(4)
+
+with k1:
     st.markdown(f"""
         <div class="metric-card">
-            <div class="metric-label">Pure Compound Gains</div>
-            <div class="metric-value" style="color: #198754;">+${total_gains:,.0f}</div>
+            <div class="metric-label">Total Out-of-Pocket Cash</div>
+            <div class="metric-value">${final_invested:,.0f}</div>
         </div>
     """, unsafe_allow_html=True)
-with m4:
+with k2:
     st.markdown(f"""
         <div class="metric-card">
-            <div class="metric-label">Return on Investment (ROI)</div>
-            <div class="metric-value" style="color: #198754;">+{roi_pct:.1f}%</div>
+            <div class="metric-label">Projected Final Wealth</div>
+            <div class="metric-value" style="color: #0d6efd;">${final_wealth:,.0f}</div>
+        </div>
+    """, unsafe_allow_html=True)
+with k3:
+    st.markdown(f"""
+        <div class="metric-card">
+            <div class="metric-label">Unrealized PnL (Pure Profit)</div>
+            <div class="metric-value" style="color: #198754;">+${final_pnl:,.0f}</div>
+        </div>
+    """, unsafe_allow_html=True)
+with k4:
+    st.markdown(f"""
+        <div class="metric-card">
+            <div class="metric-label">Total Portfolio ROI</div>
+            <div class="metric-value" style="color: #198754;">+{final_roi:.1f}%</div>
         </div>
     """, unsafe_allow_html=True)
 
 st.write("")
 
-# 7. Visualization
-tab1, tab2, tab3 = st.tabs(["📈 Growth Trajectory", "📊 Principal vs. Profit Breakdown", "🎯 Wealth Milestones"])
-years_axis = timeline_months / 12
+tab1, tab2 = st.tabs(["📈 Portfolio & Individual Stock Curves", "🍰 Final Allocation Pie Chart"])
 
 with tab1:
     fig = go.Figure()
 
-    # Portfolio Trajectory
+    # Total Combined Portfolio
     fig.add_trace(go.Scatter(
-        x=years_axis, y=portfolio_vals,
-        mode='lines', name=f'Custom Portfolio ({(effective_annual_rate * 100):.1f}%)',
-        line=dict(color='#0d6efd', width=3)
+        x=dates_timeline, y=portfolio_history,
+        mode='lines', name='TOTAL PORTFOLIO',
+        line=dict(color='#0d6efd', width=4)
     ))
 
-    # Cash / Risk Free
-    fig.add_trace(go.Scatter(
-        x=years_axis, y=cash_vals,
-        mode='lines', name=f'Cash Alternative ({(effective_cash_rate * 100):.1f}%)',
-        line=dict(color='#6c757d', width=2, dash='dot')
-    ))
+    # Individual Stock Lines
+    colors = px.colors.qualitative.Plotly
+    for idx, ticker in enumerate(selected_tickers):
+        fig.add_trace(go.Scatter(
+            x=dates_timeline, y=asset_histories[ticker],
+            mode='lines', name=f'{ticker} ({asset_config[ticker]["cagr"] * 100:.1f}%)',
+            line=dict(width=2, color=colors[idx % len(colors)])
+        ))
 
-    # Total Principal
+    # Total Cash Deposited (Cost Basis)
     fig.add_trace(go.Scatter(
-        x=years_axis, y=total_deposits,
-        mode='lines', name='Deposited Capital',
-        line=dict(color='#adb5bd', width=1.5, dash='dash')
+        x=dates_timeline, y=cost_basis_history,
+        mode='lines', name='Total Cash Deposited',
+        line=dict(color='#adb5bd', width=2, dash='dash')
     ))
 
     fig.update_layout(
-        title="Projected Capital Growth Over Time",
-        xaxis_title="Years",
-        yaxis_title="Account Balance (SGD)",
+        title="Multi-Stock Trajectory (With Custom Ad-Hoc Injections)",
+        xaxis_title="Date",
+        yaxis_title="Balance (SGD)",
         hovermode="x unified",
-        template="plotly_white",
-        legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01)
+        template="plotly_white"
     )
     st.plotly_chart(fig, use_container_width=True)
 
 with tab2:
-    # Stacked Area Chart (Principal vs Returns)
-    fig_area = go.Figure()
-    pure_growth = portfolio_vals - total_deposits
-
-    fig_area.add_trace(go.Scatter(
-        x=years_axis, y=total_deposits,
-        mode='lines', stackgroup='one',
-        name='Principal Invested',
-        line=dict(width=0.5, color='#a0c4ff')
-    ))
-    fig_area.add_trace(go.Scatter(
-        x=years_axis, y=pure_growth,
-        mode='lines', stackgroup='one',
-        name='Compound Interest',
-        line=dict(width=0.5, color='#38b000')
-    ))
-
-    fig_area.update_layout(
-        title="Portfolio Composition: Money In vs. Money Made",
-        xaxis_title="Years",
-        yaxis_title="Total Value (SGD)",
-        hovermode="x unified",
-        template="plotly_white"
+    final_breakdown = {ticker: asset_histories[ticker][-1] for ticker in selected_tickers}
+    fig_pie = px.pie(
+        names=list(final_breakdown.keys()),
+        values=list(final_breakdown.values()),
+        title=f"Expected Asset Distribution at End of Year {horizon_years}",
+        hole=0.4
     )
-    st.plotly_chart(fig_area, use_container_width=True)
+    st.plotly_chart(fig_pie, use_container_width=True)
 
-with tab3:
-    st.write("#### Journey to Your First $100,000 SGD")
-    target = 100000.0
-    hit_idx = np.where(portfolio_vals >= target)[0]
 
-    if len(hit_idx) > 0:
-        first_month = hit_idx[0] + 1
-        hit_year = first_month // 12
-        hit_rem_months = first_month % 12
-        st.success(
-            f"🚀 At this pace, you will surpass **$100,000 SGD** in **{hit_year} years and {hit_rem_months} months**!")
-
-        # Show breakdown at milestone
-        milestone_invested = total_deposits[hit_idx[0]]
-        st.write(f"- **Your actual cash contributions:** `${milestone_invested:,.2f}`")
-        st.write(f"- **Free money from the market:** `${target - milestone_invested:,.2f}`")
-    else:
-        st.info(
-            f"Target of $100,000 not reached within the chosen {horizon_years}-year window. Try extending the horizon or increasing your monthly savings!")
