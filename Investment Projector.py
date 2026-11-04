@@ -28,11 +28,12 @@ st.markdown("""
     .metric-label { font-size: 0.8rem; color: #6c757d; font-weight: 600; text-transform: uppercase; }
     .metric-value { font-size: 1.5rem; color: #212529; font-weight: 700; margin-top: 4px; }
     .impact-box {
-        background-color: #e8f5e9;
-        border-left: 5px solid #2e7d32;
-        padding: 12px;
-        border-radius: 6px;
+        background-color: #1b382b;
+        border-left: 5px solid #2ecc71;
+        padding: 14px;
+        border-radius: 8px;
         margin-top: 10px;
+        color: #e8f8f5
     }
     </style>
 """, unsafe_allow_html=True)
@@ -42,7 +43,7 @@ START_DATE = datetime.today()
 # 2. Yahoo Finance Live Engine
 @st.cache_data(ttl=8640)
 def fetch_stock_cagr(ticker: str, lookback_years: int = 5):
-    """Fetches real historical prices and computes annualized CAGR"""
+    """Fetches real historical prices and computes annualized CAGR without NaNs"""
     try:
         data = yf.download(ticker, period=f"{lookback_years}y", progress=False)
         if data.empty or len(data) < 20:
@@ -52,12 +53,20 @@ def fetch_stock_cagr(ticker: str, lookback_years: int = 5):
         if isinstance(close_prices, pd.DataFrame):
             close_prices = close_prices.iloc[:, 0]
 
+        clean_prices = close_prices.dropna()
+        if len(clean_prices) < 20:
+            return 0.08, "Insufficient data (Default 8.0%)"
+
         start_price = float(close_prices.iloc[0])
         end_price = float(close_prices.iloc[-1])
+
+        if np.isnan(start_price) or np.isnan(end_price) or start_price <= 0:
+            return 0.08, "Calculation error (Default 8.0%)"
         cagr = (end_price / start_price) ** (1.0 / lookback_years) - 1.0
-        return cagr, f"{lookback_years}Y Hist. CAGR: {cagr * 100:.1f}%"
+        if np.isnan(cagr):
+            return 0.08, "Default to 8.0%"
     except Exception:
-        return 0.08, "Fetch Error (Default 8.0%)"
+        return 0.08, "Fetch error (Default 8.0%)"
 
 # 3. Session State (Stores custom ad-hoc cash injections)
 if "injections" not in st.session_state:
@@ -117,7 +126,7 @@ for ticker in selected_tickers:
     st.sidebar.info(
         f"**Total Capital Today:** ${total_initial_cash:,.0f} SGD\n\n**Total Monthly Flow:** ${total_monthly_cash:,.0f} SGD/mo")
 
-# 5. Cash Injections
+
 # 5. AD-HOC CASH INJECTION SIMULATOR (The "What-If" Engine)
 # ---------------------------------------------------------
 st.title("💼 Apex Multi-Asset Wealth Modeler")
@@ -128,7 +137,22 @@ with st.expander("⚡ Simulate an Ad-Hoc Cash Injection (The 'What-If' Tool)", e
     col_a, col_b, col_c, col_d = st.columns(4)
 
     with col_a:
-        inj_ticker = st.selectbox("Target Stock", selected_tickers)
+        # Allows picking from your current portfolio OR typing a brand new ticker!
+        stock_choice = st.selectbox(
+            "Target Stock",
+            options=selected_tickers + ["➕ Other Custom Ticker..."]
+        )
+        if stock_choice == "➕ Other Custom Ticker...":
+            inj_ticker = st.text_input("Type Ticker Symbol:", value="MSFT").upper()
+        else:
+            inj_ticker = stock_choice
+
+    # Automatically fetch rate if it's a new custom ticker
+    if inj_ticker not in asset_config:
+        custom_rate, _ = fetch_stock_cagr(inj_ticker, lookback)
+        target_rate = custom_rate / 12.0
+    else:
+        target_rate = asset_config[inj_ticker]["monthly_r"]
     with col_b:
         inj_month = st.number_input("In Which Month?", min_value=1, max_value=total_months, value=4)
     with col_c:
