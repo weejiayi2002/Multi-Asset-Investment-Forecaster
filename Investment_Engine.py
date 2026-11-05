@@ -160,7 +160,7 @@ for ticker in selected_tickers:
             value=float(round(suggested_forward_rate * 100, 2)),
             format="%.2f",
             step=0.5,
-            key=f"cagr_{ticker}",
+            key=f"cagr_{ticker}_{lookback}",
             help=f"Historic was {raw_rate * 100:.1f}%. Adjust what you expect {ticker} to do over your horizon."
         ) / 100.0
 
@@ -227,7 +227,7 @@ for ticker in selected_tickers:
                     min_value=1,
                     max_value=min(horizon_years, 7),
                     value=3,
-                    key=f"s1_yrs_{ticker}"
+                    key=f"s1_yrs_{ticker}_{lookback}"
                 )
 
                 # Smart Adaptive Defaults:
@@ -237,12 +237,12 @@ for ticker in selected_tickers:
 
                 stage1_rate = st.number_input(
                     f"Stage 1 Momentum CAGR (%/yr)",
-                    min_value=1.0, max_value=60.0, value=default_s1, format="%.2f", step=0.5, key=f"s1_rate_{ticker}"
+                    min_value=1.0, max_value=60.0, value=default_s1, format="%.2f", step=0.5, key=f"s1_rate_{ticker}_{lookback}"
                 ) / 100.0
 
                 stage2_rate = st.number_input(
                     f"Stage 2 Mature CAGR (Years {stage1_years + 1} to {horizon_years})",
-                    min_value=1.0, max_value=30.0, value=default_s2, format="%.2f", step=0.5, key=f"s2_rate_{ticker}",
+                    min_value=1.0, max_value=30.0, value=default_s2, format="%.2f", step=0.5, key=f"s2_rate_{ticker}_{lookback}",
                     help="The realistic long-term rate once the hyper-growth phase cools down."
                 ) / 100.0
 
