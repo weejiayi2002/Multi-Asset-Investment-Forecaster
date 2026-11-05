@@ -369,12 +369,46 @@ with st.expander("⚡ Simulate an Ad-Hoc Cash Injection (The 'What-If' Tool)", e
         })
         st.success(f"Added ${inj_amount:,.0f} injection for {inj_ticker} at Month {inj_month}!")
 
-# Display current active injections
+# Display current active injections (with editing)
+# ✅ NEW: SELECTIVE EDITING & TARGETED DELETION
 if st.session_state.injections:
-    with st.expander("📋 Current Active Injections (Click to View / Clear)"):
+    with st.expander("📋 Manage Active Injections (Edit or Remove Selectively)", expanded=True):
         inj_df = pd.DataFrame(st.session_state.injections)
-        st.dataframe(inj_df, use_container_width=True)
-        if st.button("🗑️ Clear All Injections"):
+
+        # a) Editable Table (Click any cell to fix typos live!)
+        edited_inj_df = st.data_editor(
+            inj_df,
+            num_rows="dynamic",
+            use_container_width=True,
+            key="inj_table_editor"
+        )
+
+        # Keep session state synced with your live edits
+        st.session_state.injections = edited_inj_df.to_dict(orient="records")
+
+        # b) Selective One-by-One Removal
+        del_col1, del_col2 = st.columns([3, 1])
+
+        with del_col1:
+            # Build clear labels: e.g. "1: NVDA - $2,000 (Month 4: Internship Pay)"
+            options_to_delete = [
+                f"{i}: {row['Ticker']} - ${row['Amount']:,.0f} (Month {row['Month']}: {row.get('Note', '')})"
+                for i, row in enumerate(st.session_state.injections)
+            ]
+            selected_to_delete = st.selectbox("Select specific injection to remove:", options=options_to_delete)
+
+        with del_col2:
+            st.write("")  # Spacer to align button
+            st.write("")
+            if st.button("❌ Remove"):
+                idx_to_remove = int(selected_to_delete.split(":")[0])
+                st.session_state.injections.pop(idx_to_remove)
+                st.success("Removed!")
+                st.rerun()
+
+        # c) Emergency Clear All (With confirmation guard)
+        st.markdown("---")
+        if st.button("⚠️ Clear All Injections (Reset Table)"):
             st.session_state.injections = []
             st.rerun()
 
