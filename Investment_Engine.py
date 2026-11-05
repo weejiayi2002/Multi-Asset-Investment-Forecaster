@@ -50,7 +50,7 @@ def fetch_stock_cagr(ticker: str, lookback_years: int = 5):
         if data.empty or len(data) < 20:
             return 0.08, "Data unvailable (Default 8.0%)"
 
-        close_prices = data["Close"]
+        close_prices = data["Adj Close"]  # To take into account stock splits, use Adj Close
         if isinstance(close_prices, pd.DataFrame):
             close_prices = close_prices.iloc[:, 0]
 
@@ -92,9 +92,32 @@ if not selected_tickers:
     st.stop()
 
 lookback = st.sidebar.selectbox("Historical Lookback Window", [3, 5, 10], index=1)
-horizon_years = st.sidebar.slider("Investment Horizon (Years)", 1, 30, 5)
-total_months = horizon_years * 12
+# --- 🗓️ SMART LIVING CALENDAR ENGINE ---
+# Check if a restored profile has a permanent original start date & deadline
+saved_profile_data = st.session_state.get("loaded_profile", None)
 
+if saved_profile_data and "target_end_date" in saved_profile_data:
+    original_start = datetime.strptime(saved_profile_data["start_date"], "%Y-%m-%d")
+    target_end = datetime.strptime(saved_profile_data["target_end_date"], "%Y-%m-%d")
+
+    # Calculate months elapsed and months remaining to permanent deadline
+    months_passed = (START_DATE.year - original_start.year) * 12 + (START_DATE.month - original_start.month)
+    total_months = max(1, (target_end.year - START_DATE.year) * 12 + (target_end.month - START_DATE.month))
+    horizon_years = round(total_months / 12.0, 1)
+
+    st.sidebar.success(
+        f"⏳ **Goal Active:** Started {original_start.strftime('%b %Y')}\n\n"
+        f"• **{months_passed} Months Elapsed**\n\n"
+        f"• **{horizon_years} Years Remaining** (Finish: {target_end.strftime('%b %Y')})"
+    )
+    # Let user override if they want to extend their life goal
+    horizon_years = st.sidebar.slider("Adjust Remaining Horizon (Years)", 1.0, 30.0, float(horizon_years), 0.5)
+    total_months = int(horizon_years * 12)
+else:
+    # Standard fresh setup for Day 1
+    horizon_years = st.sidebar.slider("Investment Horizon (Years)", 1, 30, 10)
+    total_months = int(horizon_years * 12)
+    target_end = START_DATE + relativedelta(months=total_months)
 # SMART RISK: MEAN REVERSION TOGGLE
 st.sidebar.markdown("---")
 st.sidebar.header("🧠 Smart Risk Engine")
@@ -157,51 +180,56 @@ for ticker in selected_tickers:
         with c2:
             month_val = st.number_input(f"Monthly $", min_value=0.0, value=0.0, step=25.0, key=f"month_{ticker}")
 
-            # --- ⚡ TWO-STAGE GROWTH ENGINE ---
-            is_hyper_growth = raw_rate > 0.25  # Automatically checks if stock is crazy hot like NVDA
-
-            # --- ⚡ CLEAN, READABLE TWO-STAGE ENGINE ---
+            # --- ⚡ SMART ADAPTIVE TWO-STAGE ENGINE ---
             is_hyper_growth = raw_rate > 0.25
 
+            # Generic, professional explanation for any industry
             use_two_stage = st.checkbox(
                 "⚡ Two-Stage Growth",
                 value=is_hyper_growth,
                 key=f"twostage_{ticker}",
                 help=(
-                    "Models near-term AI momentum followed by long-term mean reversion.\n\n"
-                    "• Stage 1: Runs at high momentum for the first few years.\n"
-                    "• Stage 2: Automatically slows down to a mature, sustainable rate."
+                    "Models market momentum cycles (e.g. tech rallies, commodity booms, or biotech surges):\n\n"
+                    "• Stage 1: Captures high near-term growth while momentum is hot.\n"
+                    "• Stage 2: Automatically cools down to a mature, long-term pace."
                 )
             )
 
             if use_two_stage:
-                # 1. Slider for Duration (Full width, no squishing!)
                 stage1_years = st.slider(
                     f"Stage 1 Duration (Years)",
                     min_value=1,
                     max_value=min(horizon_years, 7),
                     value=3,
                     key=f"s1_yrs_{ticker}",
-                    help="How many years will this stock maintain high momentum before slowing down?"
+                    help="How many years will this stock maintain high momentum before cooling down?"
                 )
 
-                # 2. Stage 1 Rate (Clean vertical stack)
+                # 🧠 Smart Adaptive Defaults:
+                if raw_rate > 0.25:
+                    # Hot stocks (NVDA): Stage 1 = ~35%, Stage 2 = 18%
+                    default_s1 = float(round(raw_rate * 100 * 0.75, 2))
+                    default_s2 = 18.00
+                else:
+                    # Normal stocks (GOOGL): Stage 1 = full current rate (13.78%), Stage 2 = cools down to 9.5%
+                    default_s1 = float(round(raw_rate * 100, 2))
+                    default_s2 = float(round(min(raw_rate * 100 * 0.70, 10.0), 2))
+
                 stage1_rate = st.number_input(
                     f"Stage 1 Momentum CAGR (%/yr)",
-                    min_value=5.0,
+                    min_value=1.0,
                     max_value=60.0,
-                    value=float(round(raw_rate * 100 * 0.75, 2)),
+                    value=default_s1,
                     format="%.2f",
                     step=0.5,
                     key=f"s1_rate_{ticker}"
                 ) / 100.0
 
-                # 3. Stage 2 Rate (Clean vertical stack)
                 stage2_rate = st.number_input(
                     f"Stage 2 Mature CAGR (Years {stage1_years + 1} to {horizon_years})",
-                    min_value=5.0,
+                    min_value=1.0,
                     max_value=30.0,
-                    value=18.00,
+                    value=default_s2,
                     format="%.2f",
                     step=0.5,
                     key=f"s2_rate_{ticker}",
@@ -210,7 +238,7 @@ for ticker in selected_tickers:
 
                 st.caption(
                     f"🚀 **Phase 1:** {stage1_rate * 100:.1f}% for {stage1_years} yrs $\\rightarrow$ "
-                    f"📉 **Phase 2:** {stage2_rate * 100:.1f}% thereafter."
+                    f"📉 **Phase 2:** Cooldown to {stage2_rate * 100:.1f}% thereafter."
                 )
             else:
                 stage1_years = horizon_years
@@ -234,33 +262,38 @@ for ticker in selected_tickers:
 st.sidebar.info(
     f"**Total Capital Today:** ${total_initial_cash:,.0f} SGD\n\n**Total Monthly Flow:** ${total_monthly_cash:,.0f} SGD/mo")
 
-# PRIVACY: SAVE / RESTORE PROFILE TO LAPTOP
+# --- 💾 BACKUP & RESTORE (LIVING TIMELINE SAFE) ---
 st.sidebar.markdown("---")
-st.sidebar.subheader("💾 Backup & Restore (Privacy Safe)")
+st.sidebar.subheader("💾 Backup & Restore")
 
-# a) Download personal portfolio to your own Mac
+# Calculate permanent target deadline date to save
+target_deadline_str = (START_DATE + relativedelta(months=total_months)).strftime("%Y-%m-%d")
+
+# a) Download personal portfolio (Saves your permanent start date & finish line)
 user_export_data = json.dumps({
+    "start_date": saved_profile_data.get("start_date", START_DATE.strftime("%Y-%m-%d")) if saved_profile_data else START_DATE.strftime("%Y-%m-%d"),
+    "target_end_date": target_deadline_str,
     "tickers": selected_tickers,
-    "allocations": {t: {"initial": asset_config[t]["initial"], "monthly": asset_config[t]["monthly"]} for t in
-                    selected_tickers},
+    "allocations": {t: {"initial": asset_config[t]["initial"], "monthly": asset_config[t]["monthly"]} for t in selected_tickers},
     "injections": st.session_state.injections
 }, indent=4)
 
 st.sidebar.download_button(
-    label="📥 Download My Portfolio (.json)",
+    label="📥 Download & Save My Plan (.json)",
     data=user_export_data,
-    file_name="my_portfolio.json",
+    file_name="my_wealth_plan.json",
     mime="application/json",
-    help="Saves your exact portfolio directly to your laptop so nobody else can see it."
+    help="Saves your exact portfolio and permanent deadline directly to your computer."
 )
 
 # b) Upload file when visiting in the future
-uploaded_profile = st.sidebar.file_uploader("📤 Restore from File", type=["json"])
+uploaded_profile = st.sidebar.file_uploader("📤 Restore Saved Plan", type=["json"])
 if uploaded_profile is not None:
     try:
         profile_data = json.load(uploaded_profile)
+        st.session_state.loaded_profile = profile_data
         st.session_state.injections = profile_data.get("injections", [])
-        st.sidebar.success("Profile Restored! Re-running...")
+        st.sidebar.success("✅ Goal Restored! Timeline updated automatically.")
     except Exception:
         st.sidebar.error("Invalid portfolio file.")
 
