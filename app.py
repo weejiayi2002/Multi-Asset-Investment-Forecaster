@@ -267,15 +267,15 @@ for ticker in selected_tickers:
                 stage2_rate = forward_cagr
 
             # Save stage settings into asset_config
-            asset_config[ticker] = {
-                "initial": init_val,
-                "monthly": month_val,
-                "stage1_months": stage1_years * 12,
-                "stage1_monthly_r": stage1_rate / 12.0,
-                "stage2_monthly_r": stage2_rate / 12.0,
-                "monthly_r": stage1_rate / 12.0,
-                "cagr": stage1_rate
-            }
+        asset_config[ticker] = {
+            "initial": init_val,
+            "monthly": month_val,
+            "stage1_months": stage1_years * 12,
+            "stage1_monthly_r": stage1_rate / 12.0,
+            "stage2_monthly_r": stage2_rate / 12.0,
+            "monthly_r": stage1_rate / 12.0,
+            "cagr": stage1_rate
+        }
 
         total_initial_cash += init_val
         total_monthly_cash += month_val
