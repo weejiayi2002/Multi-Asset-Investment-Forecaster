@@ -86,10 +86,18 @@ popular_tickers = ["SPY", "QQQ", "VOO", "VWRA.L", "CSPX.L", "VT", "SMH",
     "NVDA", "AAPL", "MSFT", "GOOGL", "AMZN", "META", "TSLA", "AMD"]
 if "ticker_pool" not in st.session_state:
     st.session_state.ticker_pool = popular_tickers
+
+# Check the locker for saved data
+saved_profile_data = st.session_state.get("loaded_profile", None)
+
+# Extract saved tickers (if they exist)
+saved_tickers = saved_profile_data.get("tickers", []) if saved_profile_data else []
+
+# Use saved tickers as the default!
 selected_tickers = st.sidebar.multiselect(
     "Select Stocks / ETFs to Invest In:",
-    options=popular_tickers,
-    default=[],
+    options=st.session_state.ticker_pool + [t for t in saved_tickers if t not in st.session_state.ticker_pool],
+    default=saved_tickers,
     help="You can also type any custom ticker from Yahoo Finance!"
 )
 
@@ -173,11 +181,21 @@ for ticker in selected_tickers:
                 f"Based on real Yahoo Finance data. *You can freely edit this above!*"
             )
 
-        c1, c2 = st.columns(2)
-        with c1:
-            init_val = st.number_input(f"Initial $", min_value=0.0, value=0.0, step=50.0, key=f"init_{ticker}")
-        with c2:
-            month_val = st.number_input(f"Monthly $", min_value=0.0, value=0.0, step=25.0, key=f"month_{ticker}")
+            #  Look inside the locker for this specific stock's saved money
+            saved_init = 0.0
+            saved_month = 0.0
+            if saved_profile_data and ticker in saved_profile_data.get("allocations", {}):
+                saved_init = saved_profile_data["allocations"][ticker]["initial"]
+                saved_month = saved_profile_data["allocations"][ticker]["monthly"]
+
+            # Draw the boxes using the saved money!
+            c1, c2 = st.columns(2)
+            with c1:
+                init_val = st.number_input(f"Initial $", min_value=0.0, value=float(saved_init), step=50.0,
+                                           key=f"init_{ticker}")
+            with c2:
+                month_val = st.number_input(f"Monthly $", min_value=0.0, value=float(saved_month), step=25.0,
+                                            key=f"month_{ticker}")
 
             # --- 🏷️ INSTITUTIONAL ASSET CLASSIFICATION (Mauboussin / Damodaran Framework) ---
             if raw_rate > 0.25:
