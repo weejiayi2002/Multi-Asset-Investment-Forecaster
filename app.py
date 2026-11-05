@@ -181,21 +181,21 @@ for ticker in selected_tickers:
                 f"Based on real Yahoo Finance data. *You can freely edit this above!*"
             )
 
-            #  Look inside the locker for this specific stock's saved money
-            saved_init = 0.0
-            saved_month = 0.0
-            if saved_profile_data and ticker in saved_profile_data.get("allocations", {}):
-                saved_init = saved_profile_data["allocations"][ticker]["initial"]
-                saved_month = saved_profile_data["allocations"][ticker]["monthly"]
+        #  Look inside the locker for this specific stock's saved money
+        saved_init = 0.0
+        saved_month = 0.0
+        if saved_profile_data and ticker in saved_profile_data.get("allocations", {}):
+            saved_init = saved_profile_data["allocations"][ticker]["initial"]
+            saved_month = saved_profile_data["allocations"][ticker]["monthly"]
 
-            # Draw the boxes using the saved money!
-            c1, c2 = st.columns(2)
-            with c1:
-                init_val = st.number_input(f"Initial $", min_value=0.0, value=float(saved_init), step=50.0,
-                                           key=f"init_{ticker}")
-            with c2:
-                month_val = st.number_input(f"Monthly $", min_value=0.0, value=float(saved_month), step=25.0,
-                                            key=f"month_{ticker}")
+        # Draw the boxes using the saved money!
+        c1, c2 = st.columns(2)
+        with c1:
+            init_val = st.number_input(f"Initial $", min_value=0.0, value=float(saved_init), step=50.0,
+                                       key=f"init_{ticker}")
+        with c2:
+            month_val = st.number_input(f"Monthly $", min_value=0.0, value=float(saved_month), step=25.0,
+                                        key=f"month_{ticker}")
 
             # --- 🏷️ INSTITUTIONAL ASSET CLASSIFICATION (Mauboussin / Damodaran Framework) ---
             if raw_rate > 0.25:
