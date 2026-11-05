@@ -533,4 +533,4 @@ with tab2:
     )
     st.plotly_chart(fig_pie, use_container_width=True)
 
-
+st.caption("ℹ️ *Note: Projections are modeled in SGD. Long-term USD/SGD currency fluctuations are assumed to be neutral over multi-year horizons, consistent with standard wealth forecasting models.*")
