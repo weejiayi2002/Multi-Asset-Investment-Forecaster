@@ -42,33 +42,39 @@ st.markdown("""
 START_DATE = datetime.today()
 
 # 2. Yahoo Finance Live Engine
-@st.cache_data(ttl=8640)
+# ---------------------------------------------------------
+# 2. Yahoo Finance Live Engine (Airtight & Bulletproof)
+# ---------------------------------------------------------
+@st.cache_data
 def fetch_stock_cagr(ticker: str, lookback_years: int = 5):
-    """Fetches real historical prices and computes annualized CAGR without NaNs"""
+    """Fetches real historical prices and computes annualized CAGR cleanly."""
     try:
-        data = yf.download(ticker, period=f"{lookback_years}y", progress=False)
-        if data.empty or len(data) < 20:
-            return 0.08, "Data unvailable (Default 8.0%)"
+        # yf.Ticker().history is 100x more stable and avoids MultiIndex bugs completely
+        stock = yf.Ticker(ticker)
+        hist = stock.history(period=f"{lookback_years}y")
 
-        close_prices = data["Adj Close"]  # To take into account stock splits, use Adj Close
-        if isinstance(close_prices, pd.DataFrame):
-            close_prices = close_prices.iloc[:, 0]
+        if hist.empty or len(hist) < 20:
+            return 0.08, "Data unavailable (Default 8.0%)"
 
-        clean_prices = close_prices.dropna()
-        if len(clean_prices) < 20:
+        # hist["Close"] in history() is ALREADY split and dividend adjusted!
+        prices = hist["Close"].dropna()
+        if len(prices) < 20:
             return 0.08, "Insufficient data (Default 8.0%)"
 
-        start_price = float(clean_prices.iloc[0])
-        end_price = float(close_prices.iloc[-1])
+        start_price = float(prices.iloc[0])
+        end_price = float(prices.iloc[-1])
 
-        if np.isnan(start_price) or np.isnan(end_price) or start_price <= 0:
+        if start_price <= 0 or np.isnan(start_price) or np.isnan(end_price):
             return 0.08, "Calculation error (Default 8.0%)"
+
         cagr = (end_price / start_price) ** (1.0 / lookback_years) - 1.0
+
         if np.isnan(cagr):
             return 0.08, "Default to 8.0%"
+
         return float(cagr), f"Historical CAGR: {cagr:.2%}"
-    except Exception:
-        return 0.08, "Fetch error (Default 8.0%)"
+    except Exception as e:
+        return 0.08, f"Fetch error: {e}"
 
 
 # 3. Session State (Stores custom ad-hoc cash injections)
