@@ -58,7 +58,7 @@ def fetch_stock_cagr(ticker: str, lookback_years: int = 5):
         if len(clean_prices) < 20:
             return 0.08, "Insufficient data (Default 8.0%)"
 
-        start_price = float(close_prices.iloc[0])
+        start_price = float(clean_prices.iloc[0])
         end_price = float(close_prices.iloc[-1])
 
         if np.isnan(start_price) or np.isnan(end_price) or start_price <= 0:
@@ -180,8 +180,26 @@ for ticker in selected_tickers:
         with c2:
             month_val = st.number_input(f"Monthly $", min_value=0.0, value=0.0, step=25.0, key=f"month_{ticker}")
 
-            # --- ⚡ SMART ADAPTIVE TWO-STAGE ENGINE ---
-            is_hyper_growth = raw_rate > 0.25
+            # --- 🏷️ INSTITUTIONAL ASSET CLASSIFICATION (Mauboussin / Damodaran Framework) ---
+            if raw_rate > 0.25:
+                tier_badge = "🔥 Tier 3: Hyper-Growth Momentum (>25%)"
+                tier_color = "#e63946"  # Coral Red
+                is_hyper_growth = True
+            elif raw_rate > 0.14:
+                tier_badge = "🚀 Tier 2: High-Growth Blue-Chip (14% - 25%)"
+                tier_color = "#f4a261"  # Gold / Amber
+                is_hyper_growth = False
+            else:
+                tier_badge = "🛡️ Tier 1: Steady / Mature Compounder (≤14%)"
+                tier_color = "#2a9d8f"  # Emerald Teal
+                is_hyper_growth = False
+
+            st.markdown(
+                f"<div style='font-size: 0.82rem; font-weight: 700; color: {tier_color}; margin-top: 6px; margin-bottom: 8px;'>"
+                f"{tier_badge}"
+                f"</div>",
+                unsafe_allow_html=True
+            )
 
             # Generic, professional explanation for any industry
             use_two_stage = st.checkbox(
