@@ -10,7 +10,7 @@ import json
 
 # 1. Page Styling and Configuration
 st.set_page_config(
-    page_title="Multi-Asset Portfolio Engine",
+    page_title="Multi-Asset Portfolio Forecaster",
     page_icon="📈",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -301,13 +301,13 @@ if uploaded_profile is not None:
         st.sidebar.error("Invalid portfolio file.")
 
 
-# 5. AD-HOC CASH INJECTION SIMULATOR (The "What-If" Engine)
+# 5. AD-HOC CASH INJECTION SIMULATOR
 # ---------------------------------------------------------
-st.title("💼 Apex Multi-Asset Wealth Modeler")
+st.title("💼 Multi-Asset Portfolio Forecaster")
 st.caption(
     f"Projecting cashflow across {len(selected_tickers)} assets over a **{horizon_years}-Year ({total_months} Months)** timeline.")
 
-with st.expander("⚡ Simulate an Ad-Hoc Cash Injection (The 'What-If' Tool)", expanded=True):
+with st.expander("⚡ Simulate an Ad-Hoc Cash Injection", expanded=True):
     col_a, col_b, col_c, col_d = st.columns(4)
 
     with col_a:
