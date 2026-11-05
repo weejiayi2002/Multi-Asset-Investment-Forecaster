@@ -309,15 +309,24 @@ st.sidebar.download_button(
 
 # b) Upload file when visiting in the future
 uploaded_profile = st.sidebar.file_uploader("📤 Restore Saved Plan", type=["json"])
-if uploaded_profile is not None:
-    try:
-        profile_data = json.load(uploaded_profile)
-        st.session_state.loaded_profile = profile_data
-        st.session_state.injections = profile_data.get("injections", [])
-        st.sidebar.success("✅ Goal Restored! Timeline updated automatically.")
-    except Exception:
-        st.sidebar.error("Invalid portfolio file.")
 
+if uploaded_profile is None:
+    # If the user clicks 'X' to remove the file, clear the memory lock
+    st.session_state.last_loaded = None
+else:
+    # If a file is dropped in, check if we already processed it
+    if st.session_state.get("last_loaded") != uploaded_profile.name:
+        try:
+            profile_data = json.load(uploaded_profile)
+            st.session_state.loaded_profile = profile_data
+            st.session_state.injections = profile_data.get("injections", [])
+            st.session_state.last_loaded = uploaded_profile.name
+
+            st.rerun()
+        except Exception:
+            st.sidebar.error("Invalid portfolio file.")
+    else:
+        st.sidebar.success("✅ Goal Restored! Timeline updated automatically.")
 
 # 5. AD-HOC CASH INJECTION SIMULATOR
 # ---------------------------------------------------------
