@@ -189,16 +189,19 @@ for ticker in selected_tickers:
             # --- 🏷️ INSTITUTIONAL ASSET CLASSIFICATION (Mauboussin / Damodaran Framework) ---
             if raw_rate > 0.25:
                 tier_badge = "🔥 Tier 3: Hyper-Growth Momentum (>25%)"
-                tier_color = "#e63946"  # Coral Red
-                is_hyper_growth = True
+                tier_color = "#e63946"
+                show_two_stage = True  # 👈 SHOW and TURN ON for hot stocks like NVDA
+                auto_two_stage = True
             elif raw_rate > 0.14:
                 tier_badge = "🚀 Tier 2: High-Growth Blue-Chip (14% - 25%)"
-                tier_color = "#f4a261"  # Gold / Amber
-                is_hyper_growth = False
+                tier_color = "#f4a261"
+                show_two_stage = True  # 👈 SHOW, but keep OFF by default for GOOGL
+                auto_two_stage = False
             else:
                 tier_badge = "🛡️ Tier 1: Steady / Mature Compounder (≤14%)"
-                tier_color = "#2a9d8f"  # Emerald Teal
-                is_hyper_growth = False
+                tier_color = "#2a9d8f"
+                show_two_stage = False  # 👈 HIDE completely for VWRA / SPY!
+                auto_two_stage = False
 
             st.markdown(
                 f"<div style='font-size: 0.82rem; font-weight: 700; color: {tier_color}; margin-top: 6px; margin-bottom: 8px;'>"
@@ -207,56 +210,39 @@ for ticker in selected_tickers:
                 unsafe_allow_html=True
             )
 
-            # Generic, professional explanation for any industry
-            use_two_stage = st.checkbox(
-                "⚡ Two-Stage Growth",
-                value=is_hyper_growth,
-                key=f"twostage_{ticker}",
-                help=(
-                    "Models market momentum cycles (e.g. tech rallies, commodity booms, or biotech surges):\n\n"
-                    "• Stage 1: Captures high near-term growth while momentum is hot.\n"
-                    "• Stage 2: Automatically cools down to a mature, long-term pace."
+            # Only show Two-Stage controls if the stock actually needs it!
+            if show_two_stage:
+                use_two_stage = st.checkbox(
+                    "⚡ Two-Stage Growth Model",
+                    value=auto_two_stage,
+                    key=f"twostage_{ticker}",
+                    help="Models near-term momentum followed by long-term cooldown to a mature rate."
                 )
-            )
+            else:
+                use_two_stage = False
 
             if use_two_stage:
                 stage1_years = st.slider(
-                    f"Stage 1 Duration (Years)",
+                    f"Stage 1 Momentum Duration (Years)",
                     min_value=1,
                     max_value=min(horizon_years, 7),
                     value=3,
-                    key=f"s1_yrs_{ticker}",
-                    help="How many years will this stock maintain high momentum before cooling down?"
+                    key=f"s1_yrs_{ticker}"
                 )
 
-                # 🧠 Smart Adaptive Defaults:
-                if raw_rate > 0.25:
-                    # Hot stocks (NVDA): Stage 1 = ~35%, Stage 2 = 18%
-                    default_s1 = float(round(raw_rate * 100 * 0.75, 2))
-                    default_s2 = 18.00
-                else:
-                    # Normal stocks (GOOGL): Stage 1 = full current rate (13.78%), Stage 2 = cools down to 9.5%
-                    default_s1 = float(round(raw_rate * 100, 2))
-                    default_s2 = float(round(min(raw_rate * 100 * 0.70, 10.0), 2))
+                # Smart Adaptive Defaults:
+                default_s1 = float(round(raw_rate * 100 * 0.75, 2)) if raw_rate > 0.25 else float(
+                    round(raw_rate * 100, 2))
+                default_s2 = 15.00 if raw_rate > 0.25 else 10.00  # Conservative 15% for hot stocks, 10% for blue-chips
 
                 stage1_rate = st.number_input(
                     f"Stage 1 Momentum CAGR (%/yr)",
-                    min_value=1.0,
-                    max_value=60.0,
-                    value=default_s1,
-                    format="%.2f",
-                    step=0.5,
-                    key=f"s1_rate_{ticker}"
+                    min_value=1.0, max_value=60.0, value=default_s1, format="%.2f", step=0.5, key=f"s1_rate_{ticker}"
                 ) / 100.0
 
                 stage2_rate = st.number_input(
                     f"Stage 2 Mature CAGR (Years {stage1_years + 1} to {horizon_years})",
-                    min_value=1.0,
-                    max_value=30.0,
-                    value=default_s2,
-                    format="%.2f",
-                    step=0.5,
-                    key=f"s2_rate_{ticker}",
+                    min_value=1.0, max_value=30.0, value=default_s2, format="%.2f", step=0.5, key=f"s2_rate_{ticker}",
                     help="The realistic long-term rate once the hyper-growth phase cools down."
                 ) / 100.0
 
