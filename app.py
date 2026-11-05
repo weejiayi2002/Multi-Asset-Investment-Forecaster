@@ -283,6 +283,8 @@ for ticker in selected_tickers:
 st.sidebar.info(
     f"**Total Capital Today:** ${total_initial_cash:,.0f} SGD\n\n**Total Monthly Flow:** ${total_monthly_cash:,.0f} SGD/mo")
 
+
+
 # --- 💾 BACKUP & RESTORE (LIVING TIMELINE SAFE) ---
 st.sidebar.markdown("---")
 st.sidebar.subheader("💾 Backup & Restore")
@@ -322,12 +324,17 @@ else:
             st.session_state.injections = profile_data.get("injections", [])
             st.session_state.last_loaded = uploaded_profile.name
 
+            # 🛠️ THE CRUCIAL FIX: Force the JSON numbers into Streamlit's widget memory!
+            if "allocations" in profile_data:
+                for t, alloc in profile_data["allocations"].items():
+                    st.session_state[f"init_{t}"] = float(alloc["initial"])
+                    st.session_state[f"month_{t}"] = float(alloc["monthly"])
+
             st.rerun()
         except Exception:
             st.sidebar.error("Invalid portfolio file.")
     else:
         st.sidebar.success("✅ Goal Restored! Timeline updated automatically.")
-
 # 5. AD-HOC CASH INJECTION SIMULATOR
 # ---------------------------------------------------------
 st.title("💼 Multi-Asset Portfolio Forecaster")
