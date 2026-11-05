@@ -124,14 +124,7 @@ else:
     horizon_years = st.sidebar.slider("Investment Horizon (Years)", 1, 30, 10)
     total_months = int(horizon_years * 12)
     target_end = START_DATE + relativedelta(months=total_months)
-# SMART RISK: MEAN REVERSION TOGGLE
-st.sidebar.markdown("---")
-st.sidebar.header("🧠 Smart Risk Engine")
-enable_mean_reversion = st.sidebar.checkbox(
-    "Apply Mean Reversion",
-    value=True,
-    help="Caps extreme historic rates (like NVDA 47%) to a sustainable long-term ceiling."
-)
+
 
 
 st.sidebar.markdown("---")
@@ -150,7 +143,7 @@ for ticker in selected_tickers:
         # 1. Smart Default Suggestion:
         # If historical is > 20%, suggest 18% as a realistic mean-reverted rate.
         # Otherwise, suggest the actual historical rate.
-        suggested_forward_rate = min(raw_rate, 0.18) if enable_mean_reversion else raw_rate
+        suggested_forward_rate = min(raw_rate, 0.18) if raw_rate > 0.25 else raw_rate
 
         # 2. Per-Stock Forward Return Input:
         forward_cagr = st.number_input(
@@ -165,7 +158,7 @@ for ticker in selected_tickers:
         ) / 100.0
 
         # Smart Default Suggestion
-        is_capped = enable_mean_reversion and raw_rate > 0.18
+        is_capped = raw_rate > 0.25
         suggested_forward_rate = 0.18 if is_capped else raw_rate
 
         # 💡 DYNAMIC EXPLANATION FOR THE USER
